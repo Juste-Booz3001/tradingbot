@@ -1,23 +1,54 @@
 import { useEffect, useRef, useState } from 'react';
 
-export interface BotMessage {
-  type: 'tick' | 'position_update' | 'equity_update';
-  [key: string]: unknown;
+export interface TickMessage {
+  type: 'tick';
+  symbol: string;
+  price: number;
+  bid: number;
+  ask: number;
+  volume: number;
+  ts: number;
 }
 
+export interface PositionUpdateMessage {
+  type: 'position_update';
+  symbol: string;
+  side: 'buy' | 'sell';
+  quantity: number;
+  entry_price: number;
+  unrealized_pnl: number;
+}
+
+export interface EquityUpdateMessage {
+  type: 'equity_update';
+  equity: number;
+  drawdown_pct: number;
+  ts: number;
+}
+
+export type BotMessage = TickMessage | PositionUpdateMessage | EquityUpdateMessage;
+
 // Se connecte au WebSocket du moteur C++ et reconnecte automatiquement
-// en cas de coupure (backoff simple).
-export function useBotSocket() {
+// en cas de coupure (backoff simple). Le token JWT est requis dès l'ouverture
+// (vérifié côté serveur dans onaccept, avant même la mise à niveau HTTP->WS).
+export function useBotSocket(token: string | null) {
   const [connected, setConnected] = useState(false);
   const [lastMessage, setLastMessage] = useState<BotMessage | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
+    if (!token) {
+      setConnected(false);
+      return;
+    }
+
     let retryDelay = 1000;
     let cancelled = false;
 
     function connect() {
-      const ws = new WebSocket(`ws://${window.location.hostname}:8080/ws`);
+      const ws = new WebSocket(
+        `ws://${window.location.hostname}:8080/ws?token=${encodeURIComponent(token!)}`
+      );
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -49,7 +80,7 @@ export function useBotSocket() {
       cancelled = true;
       wsRef.current?.close();
     };
-  }, []);
+  }, [token]);
 
   return { connected, lastMessage };
 }

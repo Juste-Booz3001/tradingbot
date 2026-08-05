@@ -1,5 +1,7 @@
 cmake_minimum_required(VERSION 3.16)
-cmake_policy(SET CMP0167 NEW)
+if(POLICY CMP0167)
+    cmake_policy(SET CMP0167 NEW)
+endif()
 project(tradingbot_engine CXX)
 
 set(CMAKE_CXX_STANDARD 20)

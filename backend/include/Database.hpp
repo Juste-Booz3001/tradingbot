@@ -33,7 +33,15 @@ public:
     void updateEquitySnapshot(double equity, double drawdownPct);
     void logAlert(const std::string& level, const std::string& message);
 
-    std::vector<Order> loadOpenPositions();
+    // Écrites à chaque changement de position (OrderExecutor::onPositionChanged_)
+    // pour que l'état survive à un redémarrage/crash du process.
+    void upsertOpenPosition(const Position& pos);
+    void closePosition(const std::string& symbol);
+
+    // Relit les positions encore marquées 'open' en base — utilisé au
+    // démarrage par OrderExecutor::reconcileFromDatabase pour reconstruire
+    // l'état mémoire sans dépendre de ce qui existait avant le crash.
+    std::vector<Position> loadOpenPositions();
 
     // Utilisés par l'API pour alimenter le dashboard (Streamlit ou autre).
     std::vector<EquityPoint> getEquityHistory(int limitPoints = 500);

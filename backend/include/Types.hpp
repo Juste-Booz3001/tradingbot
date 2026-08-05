@@ -34,6 +34,7 @@ struct Order {
     OrderSide side;
     double quantity{};
     double price{};        // 0 = ordre au marché
+    double fillPrice{};    // prix réellement exécuté, renseigné par le connecteur
     double stopLoss{};
     double takeProfit{};
     OrderStatus status{OrderStatus::Pending};

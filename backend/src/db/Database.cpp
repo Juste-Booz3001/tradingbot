@@ -1,7 +1,30 @@
 #include "Database.hpp"
+
+// La libpqxx packagée par Ubuntu (noble, 7.8.1) est compilée sans le support
+// std::source_location, mais ses en-têtes le détectent et l'activent dès que
+// le code consommateur compile en C++20 — ce qui casse le linkage (symboles
+// de pqxx::conversion_error/conversion_overrun introuvables dans le .so).
+// On force la détection à "non disponible" avant d'inclure pqxx pour rester
+// compatible avec le binaire système. À retirer si la distro corrige son
+// paquet, ou si vous compilez pqxx vous-même depuis les sources.
+#include <version>
+#ifdef __cpp_lib_source_location
+#undef __cpp_lib_source_location
+#endif
+
 #include <pqxx/pqxx>
 #include <iostream>
 #include <algorithm>
+
+// exec_params() reste l'API la plus largement compatible entre les
+// différents packagings de libpqxx 7.8.x (certains, comme celui de Kali,
+// la marquent dépréciée un peu plus tôt que d'autres au profit de
+// exec(query, pqxx::params{...}), pas encore disponible partout). On
+// silence donc ce warning précis plutôt que de risquer une API absente
+// ailleurs — à revoir une fois libpqxx 7.9+ généralisé.
+#if defined(__GNUC__) || defined(__clang__)
+#pragma GCC diagnostic ignored "-Wdeprecated-declarations"
+#endif
 
 namespace tradingbot {
 
@@ -68,9 +91,72 @@ void Database::logAlert(const std::string& level, const std::string& message) {
     }
 }
 
-std::vector<Order> Database::loadOpenPositions() {
-    std::vector<Order> result;
-    // TODO: SELECT * FROM positions WHERE status = 'open', mapper vers Order.
+void Database::upsertOpenPosition(const Position& pos) {
+    try {
+        pqxx::work txn(*conn_);
+        // Une seule position ouverte par symbole à la fois (cohérent avec
+        // OrderExecutor::openPositions_, qui est aussi indexé par symbole).
+        auto existing = txn.exec_params(
+            "SELECT id FROM positions WHERE symbol = $1 AND status = 'open' LIMIT 1",
+            pos.symbol);
+
+        if (existing.empty()) {
+            txn.exec_params(
+                "INSERT INTO positions (symbol, market, side, quantity, entry_price, "
+                "stop_loss, take_profit, status, opened_at) "
+                "VALUES ($1, $2, $3, $4, $5, $6, $7, 'open', now())",
+                pos.symbol, static_cast<int>(pos.market),
+                pos.side == OrderSide::Buy ? "buy" : "sell",
+                pos.quantity, pos.entryPrice, pos.stopLoss, pos.takeProfit);
+        } else {
+            txn.exec_params(
+                "UPDATE positions SET side = $2, quantity = $3, entry_price = $4, "
+                "stop_loss = $5, take_profit = $6 WHERE id = $1",
+                existing[0]["id"].as<long long>(),
+                pos.side == OrderSide::Buy ? "buy" : "sell",
+                pos.quantity, pos.entryPrice, pos.stopLoss, pos.takeProfit);
+        }
+        txn.commit();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] upsertOpenPosition échoué : " << e.what() << "\n";
+    }
+}
+
+void Database::closePosition(const std::string& symbol) {
+    try {
+        pqxx::work txn(*conn_);
+        txn.exec_params(
+            "UPDATE positions SET status = 'closed', closed_at = now() "
+            "WHERE symbol = $1 AND status = 'open'",
+            symbol);
+        txn.commit();
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] closePosition échoué : " << e.what() << "\n";
+    }
+}
+
+std::vector<Position> Database::loadOpenPositions() {
+    std::vector<Position> result;
+    try {
+        pqxx::work txn(*conn_);
+        auto rows = txn.exec(
+            "SELECT symbol, market, side, quantity, entry_price, stop_loss, take_profit "
+            "FROM positions WHERE status = 'open'");
+        for (const auto& row : rows) {
+            Position pos;
+            pos.symbol = row["symbol"].c_str();
+            pos.market = static_cast<MarketType>(row["market"].as<int>());
+            pos.side = row["side"].c_str() == std::string("buy") ? OrderSide::Buy : OrderSide::Sell;
+            pos.quantity = row["quantity"].as<double>();
+            pos.entryPrice = row["entry_price"].as<double>();
+            pos.stopLoss = row["stop_loss"].is_null() ? 0.0 : row["stop_loss"].as<double>();
+            pos.takeProfit = row["take_profit"].is_null() ? 0.0 : row["take_profit"].as<double>();
+            pos.unrealizedPnl = 0.0; // recalculé au premier tick suivant via updateUnrealizedPnl
+            result.push_back(pos);
+        }
+    } catch (const std::exception& e) {
+        std::cerr << "[Database] loadOpenPositions échoué : " << e.what() << "\n";
+    }
     return result;
 }
 

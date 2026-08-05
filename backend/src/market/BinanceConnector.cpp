@@ -264,6 +264,36 @@ std::string BinanceConnector::placeOrder(const Order& order) {
 
     std::string orderId = std::to_string(responseJson.value("orderId", 0LL));
     std::cout << "[BinanceConnector] Ordre placé, id=" << orderId << "\n";
+
+    // Pour un ordre MARKET, Binance répond de façon synchrone avec le statut
+    // et le détail des exécutions ("fills"). On en profite pour remonter
+    // immédiatement le fill réel à l'OrderExecutor plutôt que de le perdre.
+    std::string status = responseJson.value("status", "");
+    if (status == "FILLED" || status == "PARTIALLY_FILLED") {
+        double totalQty = 0.0;
+        double totalNotional = 0.0;
+        if (responseJson.contains("fills") && responseJson["fills"].is_array()) {
+            for (const auto& fill : responseJson["fills"]) {
+                double qty = std::stod(fill.value("qty", "0"));
+                double price = std::stod(fill.value("price", "0"));
+                totalQty += qty;
+                totalNotional += qty * price;
+            }
+        }
+        double avgFillPrice = totalQty > 0.0
+            ? totalNotional / totalQty
+            : std::stod(responseJson.value("price", "0"));
+
+        if (orderCallback_) {
+            Order filled = order;
+            filled.id = orderId;
+            filled.fillPrice = avgFillPrice;
+            filled.quantity = totalQty > 0.0 ? totalQty : order.quantity;
+            filled.status = status == "FILLED" ? OrderStatus::Filled : OrderStatus::PartiallyFilled;
+            orderCallback_(filled);
+        }
+    }
+
     return orderId;
 }
 
@@ -272,6 +302,59 @@ void BinanceConnector::cancelOrder(const std::string& orderId) {
     // Nécessite de connaître le symbole associé à orderId — à stocker côté OrderExecutor
     // lors du placeOrder() pour pouvoir annuler proprement.
     std::cout << "[BinanceConnector] cancelOrder " << orderId << " (non implémenté — voir TODO)\n";
+}
+
+double BinanceConnector::getAssetBalance(const std::string& asset) {
+    std::string baseUrl = testnet_
+        ? "https://testnet.binance.vision"
+        : "https://api.binance.com";
+
+    long long timestamp = std::chrono::duration_cast<std::chrono::milliseconds>(
+        std::chrono::system_clock::now().time_since_epoch()).count();
+
+    std::ostringstream qs;
+    qs << "timestamp=" << timestamp;
+    std::string queryString = qs.str();
+    std::string signature = sign(queryString);
+    std::string fullUrl = baseUrl + "/api/v3/account?" + queryString + "&signature=" + signature;
+
+    CURL* curl = curl_easy_init();
+    if (!curl) throw std::runtime_error("BinanceConnector: échec d'initialisation libcurl");
+
+    std::string response;
+    struct curl_slist* headers = nullptr;
+    std::string apiKeyHeader = "X-MBX-APIKEY: " + apiKey_;
+    headers = curl_slist_append(headers, apiKeyHeader.c_str());
+
+    curl_easy_setopt(curl, CURLOPT_URL, fullUrl.c_str());
+    curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
+    curl_easy_setopt(curl, CURLOPT_WRITEFUNCTION, curlWriteCallback);
+    curl_easy_setopt(curl, CURLOPT_WRITEDATA, &response);
+    curl_easy_setopt(curl, CURLOPT_TIMEOUT, 10L);
+
+    CURLcode res = curl_easy_perform(curl);
+    long httpCode = 0;
+    curl_easy_getinfo(curl, CURLINFO_RESPONSE_CODE, &httpCode);
+    curl_slist_free_all(headers);
+    curl_easy_cleanup(curl);
+
+    if (res != CURLE_OK) {
+        throw std::runtime_error(std::string("BinanceConnector: requête /account échouée: ") + curl_easy_strerror(res));
+    }
+
+    json responseJson = json::parse(response, nullptr, false);
+    if (httpCode != 200 || responseJson.is_discarded() || !responseJson.contains("balances")) {
+        throw std::runtime_error("BinanceConnector: /api/v3/account inaccessible (HTTP " + std::to_string(httpCode) + ") : " + response);
+    }
+
+    for (const auto& b : responseJson["balances"]) {
+        if (b.value("asset", "") == asset) {
+            double free = std::stod(b.value("free", "0"));
+            double locked = std::stod(b.value("locked", "0"));
+            return free + locked;
+        }
+    }
+    return 0.0; // actif non détenu -> solde nul (pas une erreur)
 }
 
 } // namespace tradingbot

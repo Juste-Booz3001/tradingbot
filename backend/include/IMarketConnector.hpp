@@ -26,6 +26,11 @@ public:
     virtual std::string placeOrder(const Order& order) = 0;
     virtual void cancelOrder(const std::string& orderId) = 0;
 
+    // Solde réel côté exchange pour un actif donné (ex. "BTC" pour BTCUSDT).
+    // Utilisé uniquement pour la réconciliation au démarrage — compare l'état
+    // DB à la réalité du compte. Retourne -1.0 si l'information est indisponible.
+    virtual double getAssetBalance(const std::string& asset) = 0;
+
     virtual MarketType marketType() const = 0;
     virtual std::string exchangeName() const = 0;
 };

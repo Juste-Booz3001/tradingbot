@@ -11,6 +11,14 @@
     "password": "CHANGEZ_MOI"
   },
 
+  "auth": {
+    "username": "admin",
+    "_comment_password": "password_sha256 = sha256 de votre mot de passe, jamais le mot de passe en clair. Générer avec : echo -n 'votre_mot_de_passe' | sha256sum",
+    "password_sha256": "CHANGEZ_MOI",
+    "_comment_secret": "jwt_secret = chaîne aléatoire longue et privée. Générer avec : openssl rand -hex 32",
+    "jwt_secret": "CHANGEZ_MOI"
+  },
+
   "binance_api_key": "",
   "binance_api_secret": "",
 

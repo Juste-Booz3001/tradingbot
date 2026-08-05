@@ -38,6 +38,7 @@ public:
 
     std::string placeOrder(const Order& order) override;
     void cancelOrder(const std::string& orderId) override;
+    double getAssetBalance(const std::string& asset) override;
 
     MarketType marketType() const override { return MarketType::Crypto; }
     std::string exchangeName() const override { return "binance"; }

@@ -110,7 +110,28 @@ tick-par-tick.
 
 ## Prochaines étapes de développement
 
-- [ ] Implémenter un vrai connecteur Binance (le fichier fourni est un squelette)
-- [ ] Ajouter une vraie stratégie dans `backend/src/core/IStrategy.hpp`
-- [ ] Ajouter l'authentification sur l'API (JWT) avant tout déploiement non-local
+- [x] ~~Implémenter un vrai connecteur Binance~~ — fait (WebSocket + REST signé HMAC), voir `backend/src/market/BinanceConnector.cpp`
+- [x] ~~Persister les trades en base~~ — fait, `Database::insertTrade` appelé à chaque clôture de position
+- [x] ~~Réconciliation au redémarrage~~ — fait, `OrderExecutor::reconcileFromDatabase` compare la DB au solde réel de l'exchange et alerte en cas de divergence
+- [x] ~~Authentification JWT sur l'API~~ — fait, voir la section "Authentification" ci-dessous
+- [ ] Ajouter une vraie stratégie dans `backend/include/IStrategy.hpp` (celle fournie, croisement de moyennes mobiles, est un exemple pédagogique — non backtestée)
+- [ ] Implémenter `cancelOrder` (actuellement un stub, voir le TODO dans `BinanceConnector.cpp`)
+- [ ] Write-ahead log des ordres avant envoi (persister l'intention *avant* l'appel réseau, pas seulement à la clôture) pour une réconciliation encore plus fine après un crash en plein envoi d'ordre
 - [ ] Écrire les tests unitaires du Risk Manager (le module le plus critique)
+
+## Authentification
+
+Toutes les routes de l'API, sauf `/api/login`, exigent un JWT valide
+(`Authorization: Bearer <token>`, ou `?token=<token>` pour le WebSocket).
+
+1. Générez le hash de votre mot de passe admin :
+   ```bash
+   echo -n "votre_mot_de_passe" | sha256sum
+   ```
+2. Générez un secret de signature JWT aléatoire :
+   ```bash
+   openssl rand -hex 32
+   ```
+3. Renseignez les deux dans `config/config.json`, bloc `auth` (voir `config.example.json`).
+4. Le dashboard (frontend React) affiche un écran de connexion au premier
+   chargement et conserve le token dans le stockage local du navigateur.

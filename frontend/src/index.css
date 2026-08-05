@@ -1,0 +1,38 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  html {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-void text-ink antialiased;
+    font-feature-settings: 'tnum' 1;
+  }
+  ::selection {
+    @apply bg-amber/30 text-ink;
+  }
+}
+
+@layer utilities {
+  .tabular {
+    font-variant-numeric: tabular-nums;
+  }
+}
+
+@keyframes pulse-led {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.35; }
+}
+.animate-led {
+  animation: pulse-led 1.6s ease-in-out infinite;
+}
+
+@keyframes flash-alarm {
+  0%, 100% { background-color: rgba(226, 80, 63, 0.08); }
+  50% { background-color: rgba(226, 80, 63, 0.22); }
+}
+.animate-alarm {
+  animation: flash-alarm 1s ease-in-out infinite;
+}
