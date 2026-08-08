@@ -8,10 +8,12 @@ namespace tradingbot {
 ApiServer::ApiServer(std::shared_ptr<RiskManager> riskManager,
                       std::shared_ptr<Database> database,
                       AuthConfig authConfig,
+                      bool paperTrading,
                       int port)
     : riskManager_(std::move(riskManager)),
       database_(std::move(database)),
       authConfig_(std::move(authConfig)),
+      paperTrading_(paperTrading),
       port_(port) {}
 
 void ApiServer::broadcast(const std::string& jsonMessage) {
@@ -62,6 +64,7 @@ void ApiServer::run() {
         res["equity"] = riskManager_->currentEquity();
         res["drawdown_pct"] = riskManager_->currentDrawdownPct();
         res["halted"] = riskManager_->isHalted();
+        res["paper_trading"] = paperTrading_;
         return crow::response(200, res);
     });
 

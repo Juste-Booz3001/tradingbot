@@ -14,6 +14,7 @@ interface Status {
   equity: number;
   drawdown_pct: number;
   halted: boolean;
+  paper_trading: boolean;
 }
 
 const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'EURUSD', 'AAPL'];
@@ -108,6 +109,7 @@ export default function Dashboard() {
       <Header
         connected={connected}
         halted={halted}
+        paperTrading={status?.paper_trading ?? true}
         symbols={SYMBOLS}
         symbol={symbol}
         onSymbolChange={(s) => {

@@ -2,6 +2,7 @@
   "paper_trading": true,
   "starting_capital": 10000.0,
   "api_port": 8080,
+  "crypto_symbols": ["BTCUSDT", "ETHUSDT"],
 
   "database": {
     "host": "localhost",

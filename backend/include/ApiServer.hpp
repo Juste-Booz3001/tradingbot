@@ -29,6 +29,7 @@ public:
     ApiServer(std::shared_ptr<RiskManager> riskManager,
               std::shared_ptr<Database> database,
               AuthConfig authConfig,
+              bool paperTrading,
               int port = 8080);
     void run();
 
@@ -42,6 +43,7 @@ private:
     std::shared_ptr<RiskManager> riskManager_;
     std::shared_ptr<Database> database_;
     AuthConfig authConfig_;
+    bool paperTrading_;
     int port_;
     std::mutex clientsMutex_;
     std::set<crow::websocket::connection*> clients_;

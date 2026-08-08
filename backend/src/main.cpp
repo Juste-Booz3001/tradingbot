@@ -10,6 +10,7 @@
 #include <fstream>
 #include <thread>
 #include <memory>
+#include <unordered_map>
 
 // Nécessite nlohmann/json (https://github.com/nlohmann/json) — header-only,
 // à placer dans backend/include/nlohmann/json.hpp ou installer via le
@@ -111,7 +112,7 @@ int main(int argc, char** argv) {
     // l'objet doit déjà exister pour que le callback de ticks puisse
     // diffuser aux clients WebSocket dès qu'un prix arrive) ---
     int apiPort = config.value("api_port", 8080);
-    ApiServer apiServer(riskManager, database, authConfig, apiPort);
+    ApiServer apiServer(riskManager, database, authConfig, paperTrading, apiPort);
 
     // --- Connecteur crypto ---
     auto binanceConnector = std::make_shared<BinanceConnector>(
@@ -175,8 +176,11 @@ int main(int argc, char** argv) {
     // vide en silence si des positions étaient ouvertes avant un crash. ---
     executor->reconcileFromDatabase(database->loadOpenPositions());
 
-    std::vector<Tick> history;
+    // Un historique séparé par symbole : mélanger les prix BTC et ETH dans
+    // le même buffer fausserait complètement la moyenne mobile de chacun.
+    std::unordered_map<std::string, std::vector<Tick>> historyBySymbol;
     binanceConnector->onTick([&](const Tick& tick) {
+        auto& history = historyBySymbol[tick.symbol];
         history.push_back(tick);
         if (history.size() > 500) history.erase(history.begin());
 
@@ -219,7 +223,13 @@ int main(int argc, char** argv) {
     });
 
     binanceConnector->connect();
-    binanceConnector->subscribe("BTCUSDT");
+
+    // Liste de symboles crypto configurable (config.json: "crypto_symbols").
+    // À défaut, BTCUSDT seul pour rester compatible avec une config existante.
+    auto cryptoSymbols = config.value("crypto_symbols", nlohmann::json::array({"BTCUSDT"}));
+    for (const auto& s : cryptoSymbols) {
+        binanceConnector->subscribe(s.get<std::string>());
+    }
 
     apiServer.run(); // bloquant
 

@@ -1,6 +1,7 @@
 interface HeaderProps {
   connected: boolean;
   halted: boolean;
+  paperTrading: boolean;
   symbols: string[];
   symbol: string;
   onSymbolChange: (s: string) => void;
@@ -11,6 +12,7 @@ interface HeaderProps {
 export default function Header({
   connected,
   halted,
+  paperTrading,
   symbols,
   symbol,
   onSymbolChange,
@@ -39,6 +41,20 @@ export default function Header({
               {connected ? 'flux connecté' : 'flux hors ligne — reconnexion…'}
             </p>
           </div>
+          <span
+            className={`rounded-sm border px-2 py-1 font-mono text-[11px] font-bold uppercase tracking-widest ${
+              paperTrading
+                ? 'border-amber/60 bg-amber/10 text-amber'
+                : 'border-sell bg-sell/20 text-sell'
+            }`}
+            title={
+              paperTrading
+                ? 'Mode simulation — testnet, aucun argent réel engagé'
+                : 'ARGENT RÉEL — les ordres sont exécutés en production'
+            }
+          >
+            {paperTrading ? 'Démo' : '⚠ Réel'}
+          </span>
         </div>
 
         <div className="flex items-center gap-2">

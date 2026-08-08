@@ -1,5 +1,10 @@
 backend/build/
 config/config.json
+config/.*.swp
+config/.*.swo
+*.swp
+*.swo
+*~
 node_modules/
 frontend/dist/
 *.log
