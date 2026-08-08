@@ -1,5 +1,6 @@
 #include "Types.hpp"
 #include "IStrategy.hpp"
+#include "StrategyManager.hpp"
 #include "RiskManager.hpp"
 #include "OrderExecutor.hpp"
 #include "BinanceConnector.hpp"
@@ -112,7 +113,8 @@ int main(int argc, char** argv) {
     // l'objet doit déjà exister pour que le callback de ticks puisse
     // diffuser aux clients WebSocket dès qu'un prix arrive) ---
     int apiPort = config.value("api_port", 8080);
-    ApiServer apiServer(riskManager, database, authConfig, paperTrading, apiPort);
+    auto strategyManager = std::make_shared<StrategyManager>();
+    ApiServer apiServer(riskManager, database, strategyManager, authConfig, paperTrading, apiPort);
 
     // --- Connecteur crypto ---
     auto binanceConnector = std::make_shared<BinanceConnector>(
@@ -121,7 +123,27 @@ int main(int argc, char** argv) {
         /*testnet=*/ paperTrading
     );
 
-    auto strategy = std::make_unique<MovingAverageCrossStrategy>(9, 21);
+    // Deux stratégies enregistrées dès le départ : croisement de moyennes
+    // mobiles (suit les tendances) et RSI (détecte les extrêmes, utile
+    // quand le marché range et que la première reste silencieuse). Chacune
+    // est activable/désactivable indépendamment depuis le dashboard
+    // (/api/strategies) — désactivées, elles restent en mémoire mais ne
+    // sont plus interrogées sur les ticks.
+    auto maStrategy = std::make_unique<MovingAverageCrossStrategy>(9, 21);
+    auto rsiStrategy = std::make_unique<RsiMeanReversionStrategy>(14, 30.0, 70.0);
+    // Pointeurs bruts conservés pour lire les données internes (MA, RSI) à
+    // diffuser au dashboard — valides tant que strategyManager existe,
+    // puisque celui-ci prend possession des objets sans jamais les déplacer
+    // (stockés via unique_ptr<Entry>, adresse stable sur le tas).
+    MovingAverageCrossStrategy* maStrategyPtr = maStrategy.get();
+    RsiMeanReversionStrategy* rsiStrategyPtr = rsiStrategy.get();
+    strategyManager->addStrategy(std::move(maStrategy),
+        "Croisement de moyennes mobiles (9/21) — suit les tendances, silencieux en marché qui range",
+        /*enabledByDefault=*/ true);
+    strategyManager->addStrategy(std::move(rsiStrategy),
+        "RSI (14, seuils 30/70) — détecte les extrêmes de sur-achat/survente, actif même sans tendance",
+        /*enabledByDefault=*/ false);
+
     auto executor = std::make_shared<OrderExecutor>(binanceConnector);
 
     // --- Câblage persistance + diffusion temps réel ---
@@ -194,7 +216,10 @@ int main(int argc, char** argv) {
         history.push_back(tick);
         if (history.size() > 500) history.erase(history.begin());
 
-        // Diffuse le prix en direct au dashboard (graphique temps réel).
+        // Diffuse le prix en direct au dashboard (graphique temps réel),
+        // avec les moyennes mobiles de la stratégie quand elles sont
+        // disponibles (historique suffisant) — ce qui permet de superposer
+        // la logique de décision du bot directement sur le graphique.
         nlohmann::json tickMsg = {
             {"type", "tick"},
             {"symbol", tick.symbol},
@@ -205,6 +230,15 @@ int main(int argc, char** argv) {
             {"ts", std::chrono::duration_cast<std::chrono::milliseconds>(
                        tick.timestamp.time_since_epoch()).count()}
         };
+        auto maPair = maStrategyPtr->lastMovingAverages(tick.symbol);
+        if (maPair) {
+            tickMsg["fast_ma"] = maPair->first;
+            tickMsg["slow_ma"] = maPair->second;
+        }
+        auto rsiValue = rsiStrategyPtr->lastRsi(tick.symbol);
+        if (rsiValue) {
+            tickMsg["rsi"] = *rsiValue;
+        }
         apiServer.broadcast(tickMsg.dump());
         database->insertTick(tick);
 
@@ -212,13 +246,37 @@ int main(int argc, char** argv) {
         // (si elle existe) et notifie le dashboard via onPositionChanged_.
         executor->updateUnrealizedPnl(tick.symbol, tick.last);
 
-        auto signal = strategy->onTick(tick, history);
-        if (signal) {
-            std::cout << "[Strategy] Signal " << (signal->side == OrderSide::Buy ? "ACHAT" : "VENTE")
-                      << " sur " << signal->symbol << " (confiance=" << signal->confidence
-                      << ", stratégie=" << signal->strategyName << ")\n";
+        auto signals = strategyManager->onTick(tick, history);
+        for (const auto& signal : signals) {
+            std::cout << "[Strategy] Signal " << (signal.side == OrderSide::Buy ? "ACHAT" : "VENTE")
+                      << " sur " << signal.symbol << " (confiance=" << signal.confidence
+                      << ", stratégie=" << signal.strategyName << ")\n";
 
-            auto order = riskManager->evaluate(*signal, tick.last);
+            auto order = riskManager->evaluate(signal, tick.last);
+            bool accepted = order.has_value();
+            std::string reason;
+            if (!accepted) {
+                reason = riskManager->isHalted()
+                    ? "Bot en pause (arrêt d'urgence)"
+                    : "Limite de risque atteinte (drawdown quotidien ou exposition max sur ce marché)";
+            }
+
+            // Diffusé même en cas de rejet : sans ça, le dashboard ne montre
+            // aucune trace des signaux détectés mais bloqués par le Risk
+            // Manager, alors que c'est une info précieuse pour comprendre
+            // pourquoi le bot ne trade pas.
+            nlohmann::json signalMsg = {
+                {"type", "signal_event"},
+                {"symbol", signal.symbol},
+                {"side", signal.side == OrderSide::Buy ? "buy" : "sell"},
+                {"confidence", signal.confidence},
+                {"strategy", signal.strategyName},
+                {"accepted", accepted},
+                {"ts", nowMs()}
+            };
+            if (!accepted) signalMsg["reason"] = reason;
+            apiServer.broadcast(signalMsg.dump());
+
             if (order) {
                 std::cout << "[RiskManager] Ordre validé : "
                           << (order->side == OrderSide::Buy ? "ACHAT" : "VENTE")
@@ -226,8 +284,7 @@ int main(int argc, char** argv) {
                           << " (SL=" << order->stopLoss << ", TP=" << order->takeProfit << ")\n";
                 executor->execute(*order);
             } else {
-                std::cout << "[RiskManager] Signal rejeté (bot en pause, limite de drawdown "
-                             "quotidien ou exposition max déjà atteinte sur ce marché)\n";
+                std::cout << "[RiskManager] Signal rejeté (" << reason << ")\n";
             }
         }
     });

@@ -1,12 +1,16 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { useBotSocket } from '../hooks/useBotSocket';
-import type { EquityUpdateMessage, PositionUpdateMessage } from '../hooks/useBotSocket';
+import type { EquityUpdateMessage, PositionUpdateMessage, SignalEventMessage } from '../hooks/useBotSocket';
 import { authFetch, clearToken, getToken } from '../lib/auth';
 import Header from './Header';
 import StatsBar from './StatsBar';
 import EquityChart from './EquityChart';
 import PriceChart from './PriceChart';
 import type { TradeMarker } from './PriceChart';
+import CandlestickChart from './CandlestickChart';
+import SignalBadge from './SignalBadge';
+import EventFeed from './EventFeed';
+import StrategyPanel from './StrategyPanel';
 import PositionsPanel from './PositionsPanel';
 import TradesTable from './TradesTable';
 import LoginScreen from './LoginScreen';
@@ -16,6 +20,17 @@ interface Status {
   drawdown_pct: number;
   halted: boolean;
   paper_trading: boolean;
+}
+
+interface LastTick {
+  price: number;
+  bid: number;
+  ask: number;
+  volume: number;
+  ts: number;
+  fastMa?: number;
+  slowMa?: number;
+  rsi?: number;
 }
 
 const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'EURUSD', 'AAPL'];
@@ -30,17 +45,14 @@ export default function Dashboard() {
   const { connected, lastMessage } = useBotSocket(token);
   const [status, setStatus] = useState<Status | null>(null);
   const [symbol, setSymbol] = useState(SYMBOLS[0]);
-  const [lastTick, setLastTick] = useState<{
-    price: number;
-    bid: number;
-    ask: number;
-    ts: number;
-  } | null>(null);
+  const [lastTick, setLastTick] = useState<LastTick | null>(null);
   const [positions, setPositions] = useState<Record<string, PositionUpdateMessage>>({});
   const [lastEquityUpdate, setLastEquityUpdate] = useState<EquityUpdateMessage | null>(null);
+  const [lastSignalEvent, setLastSignalEvent] = useState<SignalEventMessage | null>(null);
   const [pnlToday, setPnlToday] = useState<number | null>(null);
   const [apiError, setApiError] = useState<string | null>(null);
   const [tradeMarkers, setTradeMarkers] = useState<TradeMarker[]>([]);
+  const [strategyPanelOpen, setStrategyPanelOpen] = useState(false);
 
   // Retour forcé à l'écran de login si le serveur répond 401 (token expiré/révoqué).
   const handleUnauthorized = useCallback(() => {
@@ -100,7 +112,7 @@ export default function Dashboard() {
     return () => clearInterval(interval);
   }, [token, handleUnauthorized, symbol]);
 
-  // Route chaque message WebSocket vers l'état concerné (prix, position, équité).
+  // Route chaque message WebSocket vers l'état concerné (prix, position, équité, signaux).
   useEffect(() => {
     if (!lastMessage) return;
     if (lastMessage.type === 'tick') {
@@ -109,7 +121,11 @@ export default function Dashboard() {
         price: lastMessage.price,
         bid: lastMessage.bid,
         ask: lastMessage.ask,
-        ts: lastMessage.ts
+        volume: lastMessage.volume,
+        ts: lastMessage.ts,
+        fastMa: lastMessage.fast_ma,
+        slowMa: lastMessage.slow_ma,
+        rsi: lastMessage.rsi
       });
     } else if (lastMessage.type === 'position_update') {
       setPositions((prev) => ({ ...prev, [lastMessage.symbol]: lastMessage }));
@@ -121,6 +137,8 @@ export default function Dashboard() {
       });
     } else if (lastMessage.type === 'equity_update') {
       setLastEquityUpdate(lastMessage);
+    } else if (lastMessage.type === 'signal_event') {
+      setLastSignalEvent(lastMessage);
     }
   }, [lastMessage, symbol]);
 
@@ -133,6 +151,7 @@ export default function Dashboard() {
   };
 
   const halted = useMemo(() => status?.halted ?? false, [status]);
+  const currentPosition = positions[symbol] ?? null;
 
   if (!token) {
     return <LoginScreen onSuccess={() => setTokenState(getToken())} />;
@@ -153,6 +172,13 @@ export default function Dashboard() {
         }}
         onHalt={emergencyStop}
         onResume={resume}
+        onOpenStrategies={() => setStrategyPanelOpen(true)}
+      />
+
+      <StrategyPanel
+        open={strategyPanelOpen}
+        onClose={() => setStrategyPanelOpen(false)}
+        onUnauthorized={handleUnauthorized}
       />
 
       {apiError && (
@@ -166,14 +192,36 @@ export default function Dashboard() {
 
         <div className="grid grid-cols-1 border-b border-hair md:grid-cols-2">
           <EquityChart liveUpdate={lastEquityUpdate} onUnauthorized={handleUnauthorized} />
-          <PriceChart symbol={symbol} lastTick={lastTick} trades={tradeMarkers} />
+          <PriceChart
+            symbol={symbol}
+            lastTick={lastTick}
+            trades={tradeMarkers}
+            position={
+              currentPosition
+                ? {
+                    entryPrice: currentPosition.entry_price,
+                    stopLoss: currentPosition.stop_loss,
+                    takeProfit: currentPosition.take_profit
+                  }
+                : null
+            }
+          />
         </div>
 
-        <div className="grid grid-cols-1 border-b border-hair md:grid-cols-[1fr_320px]">
+        <CandlestickChart symbol={symbol} lastTick={lastTick} />
+
+        <div className="border-b border-hair bg-panel px-6 py-3">
+          <SignalBadge fastMa={lastTick?.fastMa} slowMa={lastTick?.slowMa} rsi={lastTick?.rsi} />
+        </div>
+
+        <div className="grid grid-cols-1 border-b border-hair md:grid-cols-[1fr_280px_320px]">
           <div className="border-b border-hair md:border-b-0 md:border-r">
             <TradesTable onUnauthorized={handleUnauthorized} />
           </div>
-          <PositionsPanel positions={positions} />
+          <div className="border-b border-hair md:border-b-0 md:border-r">
+            <PositionsPanel positions={positions} />
+          </div>
+          <EventFeed lastSignalEvent={lastSignalEvent} />
         </div>
       </main>
     </div>

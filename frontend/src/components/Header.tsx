@@ -8,6 +8,7 @@ interface HeaderProps {
   onSymbolChange: (s: string) => void;
   onHalt: () => void;
   onResume: () => void;
+  onOpenStrategies: () => void;
 }
 
 export default function Header({
@@ -19,7 +20,8 @@ export default function Header({
   symbol,
   onSymbolChange,
   onHalt,
-  onResume
+  onResume,
+  onOpenStrategies
 }: HeaderProps) {
   return (
     <header
@@ -81,22 +83,31 @@ export default function Header({
           </select>
         </div>
 
-        <button
-          onClick={halted ? onResume : onHalt}
-          aria-pressed={halted}
-          className={`group relative flex items-center gap-2 rounded-sm border px-4 py-2 font-mono text-xs font-semibold uppercase tracking-widest transition-colors ${
-            halted
-              ? 'border-buy/60 bg-buy/10 text-buy hover:bg-buy/20'
-              : 'border-sell/60 bg-sell/10 text-sell hover:bg-sell/20'
-          }`}
-        >
-          <span
-            className={`h-2 w-2 rounded-full border ${
-              halted ? 'border-buy' : 'border-sell bg-sell'
+        <div className="flex items-center gap-2">
+          <button
+            onClick={onOpenStrategies}
+            className="rounded-sm border border-hair bg-panel2 px-3 py-1.5 font-mono text-xs uppercase tracking-widest text-muted transition-colors hover:border-amber/60 hover:text-amber"
+          >
+            Stratégies
+          </button>
+
+          <button
+            onClick={halted ? onResume : onHalt}
+            aria-pressed={halted}
+            className={`group relative flex items-center gap-2 rounded-sm border px-4 py-2 font-mono text-xs font-semibold uppercase tracking-widest transition-colors ${
+              halted
+                ? 'border-buy/60 bg-buy/10 text-buy hover:bg-buy/20'
+                : 'border-sell/60 bg-sell/10 text-sell hover:bg-sell/20'
             }`}
-          />
-          {halted ? 'Reprendre le trading' : 'Arrêt d\u2019urgence'}
-        </button>
+          >
+            <span
+              className={`h-2 w-2 rounded-full border ${
+                halted ? 'border-buy' : 'border-sell bg-sell'
+              }`}
+            />
+            {halted ? 'Reprendre le trading' : 'Arrêt d\u2019urgence'}
+          </button>
+        </div>
       </div>
     </header>
   );

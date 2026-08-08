@@ -7,11 +7,13 @@ namespace tradingbot {
 
 ApiServer::ApiServer(std::shared_ptr<RiskManager> riskManager,
                       std::shared_ptr<Database> database,
+                      std::shared_ptr<StrategyManager> strategyManager,
                       AuthConfig authConfig,
                       bool paperTrading,
                       int port)
     : riskManager_(std::move(riskManager)),
       database_(std::move(database)),
+      strategyManager_(std::move(strategyManager)),
       authConfig_(std::move(authConfig)),
       paperTrading_(paperTrading),
       port_(port) {}
@@ -120,6 +122,43 @@ void ApiServer::run() {
         crow::json::wvalue res;
         res["trades"] = std::move(rows);
         return crow::response(200, res);
+    });
+
+    // --- Stratégies : liste + activation/désactivation depuis le dashboard ---
+    CROW_ROUTE(app, "/api/strategies")
+    ([this](const crow::request& req) {
+        if (!checkAuth(req)) return crow::response(401, "{\"error\":\"non autorisé\"}");
+        crow::json::wvalue::list items;
+        for (const auto& s : strategyManager_->list()) {
+            crow::json::wvalue item;
+            item["name"] = s.name;
+            item["description"] = s.description;
+            item["enabled"] = s.enabled;
+            items.push_back(std::move(item));
+        }
+        crow::json::wvalue res;
+        res["strategies"] = std::move(items);
+        return crow::response(200, res);
+    });
+
+    CROW_ROUTE(app, "/api/strategies/<string>/enable").methods(crow::HTTPMethod::Post)
+    ([this](const crow::request& req, std::string name) {
+        if (!checkAuth(req)) return crow::response(401, "{\"error\":\"non autorisé\"}");
+        if (!strategyManager_->setEnabled(name, true)) {
+            return crow::response(404, "{\"error\":\"stratégie inconnue\"}");
+        }
+        std::cout << "[ApiServer] Stratégie activée : " << name << "\n";
+        return crow::response(200, "{\"status\":\"enabled\"}");
+    });
+
+    CROW_ROUTE(app, "/api/strategies/<string>/disable").methods(crow::HTTPMethod::Post)
+    ([this](const crow::request& req, std::string name) {
+        if (!checkAuth(req)) return crow::response(401, "{\"error\":\"non autorisé\"}");
+        if (!strategyManager_->setEnabled(name, false)) {
+            return crow::response(404, "{\"error\":\"stratégie inconnue\"}");
+        }
+        std::cout << "[ApiServer] Stratégie désactivée : " << name << "\n";
+        return crow::response(200, "{\"status\":\"disabled\"}");
     });
 
     // --- WebSocket (flux temps réel vers le dashboard) ---

@@ -1,6 +1,7 @@
 #pragma once
 #include "RiskManager.hpp"
 #include "Database.hpp"
+#include "StrategyManager.hpp"
 #include <memory>
 #include <set>
 #include <mutex>
@@ -28,6 +29,7 @@ class ApiServer {
 public:
     ApiServer(std::shared_ptr<RiskManager> riskManager,
               std::shared_ptr<Database> database,
+              std::shared_ptr<StrategyManager> strategyManager,
               AuthConfig authConfig,
               bool paperTrading,
               int port = 8080);
@@ -42,6 +44,7 @@ private:
 
     std::shared_ptr<RiskManager> riskManager_;
     std::shared_ptr<Database> database_;
+    std::shared_ptr<StrategyManager> strategyManager_;
     AuthConfig authConfig_;
     bool paperTrading_;
     int port_;

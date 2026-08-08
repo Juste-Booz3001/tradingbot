@@ -36,7 +36,7 @@ include_directories(
     ${PQXX_INCLUDE_DIRS}
 )
 
-file(GLOB_RECURSE SOURCES
+file(GLOB_RECURSE SOURCES CONFIGURE_DEPENDS
     src/*.cpp
 )
 

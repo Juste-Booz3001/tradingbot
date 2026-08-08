@@ -8,6 +8,20 @@ export interface TickMessage {
   ask: number;
   volume: number;
   ts: number;
+  fast_ma?: number;
+  slow_ma?: number;
+  rsi?: number;
+}
+
+export interface SignalEventMessage {
+  type: 'signal_event';
+  symbol: string;
+  side: 'buy' | 'sell';
+  confidence: number;
+  strategy: string;
+  accepted: boolean;
+  reason?: string;
+  ts: number;
 }
 
 export interface PositionUpdateMessage {
@@ -33,7 +47,12 @@ export interface EquityUpdateMessage {
   ts: number;
 }
 
-export type BotMessage = TickMessage | PositionUpdateMessage | PositionClosedMessage | EquityUpdateMessage;
+export type BotMessage =
+  | TickMessage
+  | PositionUpdateMessage
+  | PositionClosedMessage
+  | EquityUpdateMessage
+  | SignalEventMessage;
 
 // Se connecte au WebSocket du moteur C++ et reconnecte automatiquement
 // en cas de coupure (backoff simple). Le token JWT est requis dès l'ouverture
