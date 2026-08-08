@@ -6,6 +6,7 @@ import Header from './Header';
 import StatsBar from './StatsBar';
 import EquityChart from './EquityChart';
 import PriceChart from './PriceChart';
+import type { TradeMarker } from './PriceChart';
 import PositionsPanel from './PositionsPanel';
 import TradesTable from './TradesTable';
 import LoginScreen from './LoginScreen';
@@ -18,6 +19,11 @@ interface Status {
 }
 
 const SYMBOLS = ['BTCUSDT', 'ETHUSDT', 'EURUSD', 'AAPL'];
+// Seuls les symboles crypto ont un connecteur réel (BinanceConnector) pour
+// l'instant. EURUSD/AAPL restent dans le sélecteur pour montrer la direction
+// du projet, mais sont désactivés tant que les connecteurs forex/actions
+// n'existent pas.
+const AVAILABLE_SYMBOLS = ['BTCUSDT', 'ETHUSDT'];
 
 export default function Dashboard() {
   const [token, setTokenState] = useState<string | null>(() => getToken());
@@ -33,6 +39,8 @@ export default function Dashboard() {
   const [positions, setPositions] = useState<Record<string, PositionUpdateMessage>>({});
   const [lastEquityUpdate, setLastEquityUpdate] = useState<EquityUpdateMessage | null>(null);
   const [pnlToday, setPnlToday] = useState<number | null>(null);
+  const [apiError, setApiError] = useState<string | null>(null);
+  const [tradeMarkers, setTradeMarkers] = useState<TradeMarker[]>([]);
 
   // Retour forcé à l'écran de login si le serveur répond 401 (token expiré/révoqué).
   const handleUnauthorized = useCallback(() => {
@@ -44,9 +52,17 @@ export default function Dashboard() {
     if (!token) return;
     const fetchStatus = () => {
       authFetch('/api/status', {}, handleUnauthorized)
-        .then((r) => r.json())
-        .then(setStatus)
-        .catch(() => {});
+        .then((r) => {
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+          return r.json();
+        })
+        .then((data) => {
+          setStatus(data);
+          setApiError(null);
+        })
+        .catch(() => {
+          setApiError("Impossible de joindre le moteur — vérifiez qu'il tourne toujours.");
+        });
     };
     fetchStatus();
     const interval = setInterval(fetchStatus, 3000);
@@ -58,19 +74,31 @@ export default function Dashboard() {
     const fetchTradesForPnl = () => {
       authFetch('/api/trades', {}, handleUnauthorized)
         .then((r) => r.json())
-        .then((data: { trades?: { pnl: number; ts: string }[] }) => {
+        .then((data: { trades?: { symbol: string; side: 'buy' | 'sell'; pnl: number; fill_price: number; ts: string }[] }) => {
+          const trades = data.trades ?? [];
           const cutoff = Date.now() - 24 * 60 * 60 * 1000;
-          const total = (data.trades ?? [])
+          const total = trades
             .filter((t) => new Date(t.ts).getTime() >= cutoff)
             .reduce((sum, t) => sum + t.pnl, 0);
           setPnlToday(total);
+
+          setTradeMarkers(
+            trades
+              .filter((t) => t.symbol === symbol)
+              .map((t) => ({
+                ts: new Date(t.ts).getTime(),
+                side: t.side,
+                price: t.fill_price,
+                pnl: t.pnl
+              }))
+          );
         })
         .catch(() => {});
     };
     fetchTradesForPnl();
     const interval = setInterval(fetchTradesForPnl, 10000);
     return () => clearInterval(interval);
-  }, [token, handleUnauthorized]);
+  }, [token, handleUnauthorized, symbol]);
 
   // Route chaque message WebSocket vers l'état concerné (prix, position, équité).
   useEffect(() => {
@@ -85,6 +113,12 @@ export default function Dashboard() {
       });
     } else if (lastMessage.type === 'position_update') {
       setPositions((prev) => ({ ...prev, [lastMessage.symbol]: lastMessage }));
+    } else if (lastMessage.type === 'position_closed') {
+      setPositions((prev) => {
+        const next = { ...prev };
+        delete next[lastMessage.symbol];
+        return next;
+      });
     } else if (lastMessage.type === 'equity_update') {
       setLastEquityUpdate(lastMessage);
     }
@@ -111,6 +145,7 @@ export default function Dashboard() {
         halted={halted}
         paperTrading={status?.paper_trading ?? true}
         symbols={SYMBOLS}
+        availableSymbols={AVAILABLE_SYMBOLS}
         symbol={symbol}
         onSymbolChange={(s) => {
           setSymbol(s);
@@ -120,12 +155,18 @@ export default function Dashboard() {
         onResume={resume}
       />
 
+      {apiError && (
+        <div className="border-b border-sell/40 bg-sell/10 px-6 py-2 text-center font-mono text-xs text-sell">
+          ⚠ {apiError}
+        </div>
+      )}
+
       <main className="mx-auto max-w-[1400px]">
         <StatsBar status={status} pnlToday={pnlToday} />
 
         <div className="grid grid-cols-1 border-b border-hair md:grid-cols-2">
           <EquityChart liveUpdate={lastEquityUpdate} onUnauthorized={handleUnauthorized} />
-          <PriceChart symbol={symbol} lastTick={lastTick} />
+          <PriceChart symbol={symbol} lastTick={lastTick} trades={tradeMarkers} />
         </div>
 
         <div className="grid grid-cols-1 border-b border-hair md:grid-cols-[1fr_320px]">

@@ -28,6 +28,9 @@ export default function PositionsPanel({ positions }: PositionsPanelProps) {
                 >
                   {p.side === 'buy' ? 'long' : 'short'} · {fmtQty(p.quantity)} @ {fmtUsd(p.entry_price)} $
                 </p>
+                <p className="mt-0.5 font-mono text-[11px] text-muted">
+                  SL {fmtUsd(p.stop_loss)} $ · TP {fmtUsd(p.take_profit)} $
+                </p>
               </div>
               <p
                 className={`font-mono text-sm font-semibold tabular ${

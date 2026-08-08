@@ -137,7 +137,9 @@ int main(int argc, char** argv) {
             {"side", pos.side == OrderSide::Buy ? "buy" : "sell"},
             {"quantity", pos.quantity},
             {"entry_price", pos.entryPrice},
-            {"unrealized_pnl", pos.unrealizedPnl}
+            {"unrealized_pnl", pos.unrealizedPnl},
+            {"stop_loss", pos.stopLoss},
+            {"take_profit", pos.takeProfit}
         };
         apiServer.broadcast(msg.dump());
     });
@@ -161,6 +163,14 @@ int main(int argc, char** argv) {
             {"ts", nowMs()}
         };
         apiServer.broadcast(equityMsg.dump());
+
+        // Prévient le dashboard que la position a disparu — sans ça, le
+        // dernier position_update reçu reste affiché indéfiniment.
+        nlohmann::json closedMsg = {
+            {"type", "position_closed"},
+            {"symbol", fill.symbol}
+        };
+        apiServer.broadcast(closedMsg.dump());
 
         std::cout << "[main] Position " << fill.symbol << " clôturée (qty="
                   << closingQty << ", pnl=" << realizedPnl << ")\n";

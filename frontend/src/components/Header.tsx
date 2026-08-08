@@ -3,6 +3,7 @@ interface HeaderProps {
   halted: boolean;
   paperTrading: boolean;
   symbols: string[];
+  availableSymbols: string[];
   symbol: string;
   onSymbolChange: (s: string) => void;
   onHalt: () => void;
@@ -14,6 +15,7 @@ export default function Header({
   halted,
   paperTrading,
   symbols,
+  availableSymbols,
   symbol,
   onSymbolChange,
   onHalt,
@@ -67,11 +69,15 @@ export default function Header({
             onChange={(e) => onSymbolChange(e.target.value)}
             className="rounded-sm border border-hair bg-panel2 px-3 py-1.5 font-mono text-sm text-ink outline-none focus:border-amber"
           >
-            {symbols.map((s) => (
-              <option key={s} value={s}>
-                {s}
-              </option>
-            ))}
+            {symbols.map((s) => {
+              const available = availableSymbols.includes(s);
+              return (
+                <option key={s} value={s} disabled={!available}>
+                  {s}
+                  {available ? '' : ' — non connecté'}
+                </option>
+              );
+            })}
           </select>
         </div>
 

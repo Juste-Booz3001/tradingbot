@@ -17,6 +17,13 @@ export interface PositionUpdateMessage {
   quantity: number;
   entry_price: number;
   unrealized_pnl: number;
+  stop_loss: number;
+  take_profit: number;
+}
+
+export interface PositionClosedMessage {
+  type: 'position_closed';
+  symbol: string;
 }
 
 export interface EquityUpdateMessage {
@@ -26,7 +33,7 @@ export interface EquityUpdateMessage {
   ts: number;
 }
 
-export type BotMessage = TickMessage | PositionUpdateMessage | EquityUpdateMessage;
+export type BotMessage = TickMessage | PositionUpdateMessage | PositionClosedMessage | EquityUpdateMessage;
 
 // Se connecte au WebSocket du moteur C++ et reconnecte automatiquement
 // en cas de coupure (backoff simple). Le token JWT est requis dès l'ouverture
